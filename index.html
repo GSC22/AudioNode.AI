@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+<title>AudioNodes.ai</title>
+
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
+</head>
+
+<body>
+
+<header>AudioNodes.ai</header>
+
+<div class="tagline">
+Analyze Sound • Detect Genre • Reveal Chords
+</div>
+
+<div class="container">
+
+<div class="card">
+
+<h2>Upload Audio</h2>
+
+<label class="upload-box">
+<input type="file" id="audioFile" accept=".mp3,.wav">
+<span>🎧 Upload Audio File</span>
+</label>
+
+<p id="fileName"></p>
+
+<audio id="audioPlayer" controls></audio>
+
+<button id="analyzeBtn">Analyze Music</button>
+
+</div>
+
+
+<div class="card">
+
+<h2>Enter Frequency</h2>
+
+<input type="number" id="frequency" placeholder="Example: 440">
+
+<button id="freqBtn">Detect Note</button>
+
+</div>
+
+</div>
+
+<div id="result"></div>
+
+<!-- TRANSPOSE -->
+<div class="transpose-container">
+<h3>Transpose</h3>
+<button onclick="changeTranspose(-1)">➖</button>
+<span id="transposeValue">0</span>
+<button onclick="changeTranspose(1)">➕</button>
+</div>
+
+<!-- TIMELINE -->
+<div class="timeline-container">
+<h3>Chord Timeline</h3>
+<div id="timeline"></div>
+</div>
+
+<!-- WAVEFORM -->
+<div class="waveform-container">
+<h3>Waveform</h3>
+<canvas id="waveform" width="900" height="200"></canvas>
+</div>
+
+
+<script>
+
+let audioFile=document.getElementById("audioFile")
+let player=document.getElementById("audioPlayer")
+
+let chordBlocks=[]
+
+// ✅ STATE
+let originalTimeline=[]
+let originalChords=[]
+let detectedKey=""
+let detectedGenre=""
+let detectedConfidence=""
+let transpose=0
+
+const notes=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B']
+
+
+// LOAD AUDIO
+audioFile.addEventListener("change", function(){
+
+let file=this.files[0]
+
+if(file){
+
+player.src=URL.createObjectURL(file)
+player.load()
+
+document.getElementById("fileName").innerText="Selected: "+file.name
+
+}
+
+})
+
+
+// ANALYZE AUDIO
+document.getElementById("analyzeBtn").addEventListener("click", analyzeAudio)
+
+async function analyzeAudio(){
+
+let fileInput=document.getElementById("audioFile")
+let result=document.getElementById("result")
+let timeline=document.getElementById("timeline")
+
+if(fileInput.files.length===0){
+alert("Upload audio file")
+return
+}
+
+result.innerHTML="Analyzing audio... 🎧"
+timeline.innerHTML=""
+
+let formData=new FormData()
+formData.append("audio",fileInput.files[0])
+
+let response=await fetch("/predict_audio",{
+method:"POST",
+body:formData
+})
+
+let data=await response.json()
+
+if(data.error){
+result.innerHTML="Error: "+data.error
+return
+}
+
+// ✅ SAVE DATA (FIXED)
+originalTimeline = data.timeline
+originalChords = data.chords
+
+detectedKey = data.key
+detectedGenre = data.genre
+detectedConfidence = data.confidence
+
+transpose = 0
+document.getElementById("transposeValue").innerText = transpose
+
+updateView()
+
+drawWaveform(data.waveform)
+
+}
+
+
+// TRANSPOSE LOGIC
+function transposeChord(chord, shift){
+
+let root=chord.match(/^[A-G]#?/)
+
+if(!root) return chord
+
+root=root[0]
+
+let suffix=chord.replace(root,"")
+
+let index=notes.indexOf(root)
+
+if(index===-1) return chord
+
+let newIndex=(index+shift+12)%12
+
+return notes[newIndex]+suffix
+
+}
+
+
+// ✅ UPDATE VIEW (FIXED GENRE)
+function updateView(){
+
+let result=document.getElementById("result")
+
+let newChords=originalChords.map(c=>transposeChord(c,transpose))
+
+result.innerHTML=`
+<div class="result-card">
+<h2>Genre: ${detectedGenre}</h2>
+<p>Confidence: ${detectedConfidence}</p>
+<p>Key: ${detectedKey}</p>
+<p>Transpose: ${transpose}</p>
+<p>Main Chord: ${newChords.join(" - ")}</p>
+</div>
+`
+
+let newTimeline=originalTimeline.map(item=>({
+time:item.time,
+chord:transposeChord(item.chord,transpose)
+}))
+
+drawTimeline(newTimeline)
+
+}
+
+
+// TRANSPOSE BUTTONS
+function changeTranspose(val){
+
+transpose+=val
+
+if(transpose>12) transpose=12
+if(transpose<-12) transpose=-12
+
+document.getElementById("transposeValue").innerText=transpose
+
+updateView()
+
+}
+
+
+// TIMELINE
+function drawTimeline(timelineData){
+
+let timeline=document.getElementById("timeline")
+timeline.innerHTML=""
+
+chordBlocks=[]
+
+timelineData.forEach(item=>{
+
+let block=document.createElement("div")
+
+block.className="chord-block"
+block.dataset.time=item.time
+
+block.innerHTML=`
+<span>${item.chord}</span>
+<small>${item.time}s</small>
+`
+
+block.onclick=function(){
+player.currentTime=item.time
+player.play()
+}
+
+timeline.appendChild(block)
+
+chordBlocks.push(block)
+
+})
+
+}
+
+
+// WAVEFORM
+function drawWaveform(data){
+
+let canvas=document.getElementById("waveform")
+let ctx=canvas.getContext("2d")
+
+ctx.clearRect(0,0,canvas.width,canvas.height)
+
+ctx.beginPath()
+
+for(let i=0;i<data.length;i++){
+
+let x=i*(canvas.width/data.length)
+let y=(data[i]*80)+100
+
+ctx.lineTo(x,y)
+
+}
+
+ctx.strokeStyle="#00E5FF"
+ctx.shadowColor="#00E5FF"
+ctx.shadowBlur=10
+ctx.lineWidth=2
+
+ctx.stroke()
+
+}
+
+
+// CHORD HIGHLIGHT
+player.addEventListener("timeupdate", function(){
+
+let currentTime=player.currentTime
+
+chordBlocks.forEach(block=>{
+
+let time=parseFloat(block.dataset.time)
+
+if(currentTime>=time){
+
+chordBlocks.forEach(b=>b.classList.remove("active"))
+
+block.classList.add("active")
+
+}
+
+})
+
+})
+
+
+// FREQUENCY
+document.getElementById("freqBtn").addEventListener("click", analyzeFrequency)
+
+async function analyzeFrequency(){
+
+let freq=document.getElementById("frequency").value
+let result=document.getElementById("result")
+
+if(!freq){
+alert("Enter frequency")
+return
+}
+
+result.innerHTML="Analyzing frequency..."
+
+let response=await fetch("/predict_frequency",{
+method:"POST",
+headers:{
+"Content-Type":"application/json"
+},
+body:JSON.stringify({frequency:freq})
+})
+
+let data=await response.json()
+
+result.innerHTML=`
+<div class="result-card">
+<h2>Detected Note: ${data.note}</h2>
+<p>Suggested Chords: ${data.suggested_chords.join(" - ")}</p>
+</div>
+`
+
+}
+
+</script>
+
+</body>
+</html>
