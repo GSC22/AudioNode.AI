@@ -1,6 +1,6 @@
 # 🎧 AudioNode AI
 
-AudioNode AI is an intelligent music analysis system that helps you understand songs beyond just sound. It combines machine learning and audio signal processing to identify a song’s **genre**, **musical key**, and **chord progression** — all from an uploaded audio file.
+AudioNode AI is an intelligent music analysis system that helps you understand songs beyond just sound. It combines machine learning and audio signal processing to identify a song’s **genre**, **musical key**, and **chord progression** - all from an uploaded audio file.
 
 It is designed for musicians, learners, and developers who want deeper insights into how music is structured.
 
@@ -104,6 +104,7 @@ AudioNode-AI/
   │── static/
     |── style.css
 
+---
 
 ## 💡 Closing Note
 
